@@ -1,9 +1,10 @@
 from .auth import hash_password
-from .database import SessionLocal
+from .database import Base, SessionLocal, engine
 from .models import Role, User
 
 
 def seed():
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.email == 'admin@getsendy.dev').first():

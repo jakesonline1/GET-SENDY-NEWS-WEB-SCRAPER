@@ -50,3 +50,7 @@ cd backend
 pip install -r requirements.txt
 PYTHONPATH=. pytest
 ```
+
+## Troubleshooting
+- If API crashes at startup with email validation errors, ensure dependencies are installed from `backend/requirements.txt` (includes `email-validator`).
+- The seed step now creates database tables before inserting users, so `docker compose up` can bootstrap cleanly.
