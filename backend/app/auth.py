@@ -1,50 +1,25 @@
-import base64
-import hashlib
-import hmac
-import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import get_db
 from .models import User
 
+pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/auth/login')
-PBKDF2_ITERATIONS = 390000
-
-
-def _pbkdf2_hash(password: str, salt: bytes) -> bytes:
-    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, PBKDF2_ITERATIONS)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        scheme, iter_str, salt_b64, hash_b64 = hashed_password.split('$')
-        if scheme != 'pbkdf2_sha256':
-            return False
-        if int(iter_str) != PBKDF2_ITERATIONS:
-            return False
-        salt = base64.b64decode(salt_b64.encode('ascii'))
-        expected = base64.b64decode(hash_b64.encode('ascii'))
-    except Exception:
-        return False
-
-    candidate = _pbkdf2_hash(plain_password, salt)
-    return hmac.compare_digest(candidate, expected)
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = _pbkdf2_hash(password, salt)
-    return 'pbkdf2_sha256${}${}${}'.format(
-        PBKDF2_ITERATIONS,
-        base64.b64encode(salt).decode('ascii'),
-        base64.b64encode(digest).decode('ascii'),
-    )
+    return pwd_context.hash(password)
 
 
 def create_access_token(subject: str) -> str:

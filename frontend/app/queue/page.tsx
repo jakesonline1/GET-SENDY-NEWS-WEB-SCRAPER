@@ -11,10 +11,12 @@ export default function QueuePage() {
   const [breakingOnly, setBreakingOnly] = useState(false);
 
   const load = async () => {
+    const token = localStorage.getItem('token');
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (breakingOnly) params.set('breaking', 'true');
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/content-packs?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
     setPacks(data);

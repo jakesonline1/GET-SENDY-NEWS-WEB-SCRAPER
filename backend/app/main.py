@@ -1,21 +1,16 @@
 import json
-import logging
-import time
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from .auth import create_access_token, hash_password, verify_password
-from .database import Base, SessionLocal, engine, get_db
+from .auth import create_access_token, get_current_user, hash_password, verify_password
+from .database import Base, engine, get_db
 from .models import ContentPack, ContentPackStatus, Role, User
 from .schemas import ContentPackOut, ContentPackUpdate, LoginIn, RejectIn, TokenOut, UserCreate, UserOut
 from .services.pipeline import run_enrichment_and_generation, run_ingestion, set_status
 
 app = FastAPI(title='Get Sendy Pipeline API')
-logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,37 +21,9 @@ app.add_middleware(
 )
 
 
-def wait_for_db(max_attempts: int = 30, delay_seconds: int = 2) -> None:
-    for attempt in range(1, max_attempts + 1):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text('SELECT 1'))
-            return
-        except OperationalError:
-            if attempt == max_attempts:
-                raise
-            time.sleep(delay_seconds)
-
-
-def ensure_seed_users(db: Session) -> None:
-    if not db.query(User).filter(User.email == 'admin@getsendy.dev').first():
-        db.add(User(email='admin@getsendy.dev', password_hash=hash_password('password123'), role=Role.ADMIN))
-    if not db.query(User).filter(User.email == 'reviewer@getsendy.dev').first():
-        db.add(User(email='reviewer@getsendy.dev', password_hash=hash_password('password123'), role=Role.REVIEWER))
-    db.commit()
-
-
 @app.on_event('startup')
 def startup():
-    wait_for_db()
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        ensure_seed_users(db)
-    except Exception:
-        logger.exception('Failed to seed startup users')
-    finally:
-        db.close()
 
 
 @app.get('/health')
@@ -125,6 +92,7 @@ def list_content_packs(
     status: ContentPackStatus | None = None,
     breaking: bool | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     query = db.query(ContentPack)
     if status:
@@ -136,7 +104,7 @@ def list_content_packs(
 
 
 @app.get('/content-packs/{pack_id}', response_model=ContentPackOut)
-def get_content_pack(pack_id: int, db: Session = Depends(get_db)):
+def get_content_pack(pack_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     pack = db.query(ContentPack).filter(ContentPack.id == pack_id).first()
     if not pack:
         raise HTTPException(status_code=404, detail='Not found')
@@ -144,7 +112,7 @@ def get_content_pack(pack_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch('/content-packs/{pack_id}', response_model=ContentPackOut)
-def update_content_pack(pack_id: int, payload: ContentPackUpdate, db: Session = Depends(get_db)):
+def update_content_pack(pack_id: int, payload: ContentPackUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     pack = db.query(ContentPack).filter(ContentPack.id == pack_id).first()
     if not pack:
         raise HTTPException(status_code=404, detail='Not found')
@@ -169,7 +137,7 @@ def update_content_pack(pack_id: int, payload: ContentPackUpdate, db: Session = 
 
 
 @app.post('/content-packs/{pack_id}/approve', response_model=ContentPackOut)
-def approve_content_pack(pack_id: int, db: Session = Depends(get_db)):
+def approve_content_pack(pack_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     pack = db.query(ContentPack).filter(ContentPack.id == pack_id).first()
     if not pack:
         raise HTTPException(status_code=404, detail='Not found')
@@ -183,7 +151,7 @@ def approve_content_pack(pack_id: int, db: Session = Depends(get_db)):
 
 
 @app.post('/content-packs/{pack_id}/reject', response_model=ContentPackOut)
-def reject_content_pack(pack_id: int, payload: RejectIn, db: Session = Depends(get_db)):
+def reject_content_pack(pack_id: int, payload: RejectIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     pack = db.query(ContentPack).filter(ContentPack.id == pack_id).first()
     if not pack:
         raise HTTPException(status_code=404, detail='Not found')
@@ -196,7 +164,7 @@ def reject_content_pack(pack_id: int, payload: RejectIn, db: Session = Depends(g
 
 
 @app.get('/content-packs/{pack_id}/export')
-def export_handoff(pack_id: int, db: Session = Depends(get_db)):
+def export_handoff(pack_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     pack = db.query(ContentPack).filter(ContentPack.id == pack_id).first()
     if not pack:
         raise HTTPException(status_code=404, detail='Not found')
@@ -204,7 +172,9 @@ def export_handoff(pack_id: int, db: Session = Depends(get_db)):
 
 
 @app.post('/pipeline/run')
-def run_pipeline(db: Session = Depends(get_db)):
+def run_pipeline(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail='Only admins can run pipeline manually')
     created = run_ingestion(db)
     run_enrichment_and_generation(db)
     return {'created_content_packs': created}

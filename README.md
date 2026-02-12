@@ -37,7 +37,8 @@ docker compose up --build
 ```
 
 Login:
-- Auth is bypassed in this local testing build. Open the web app and go directly to the review queue.
+- `admin@getsendy.dev` / `password123`
+- `reviewer@getsendy.dev` / `password123`
 
 Web UI: http://localhost:3000
 API docs: http://localhost:8000/docs
@@ -51,19 +52,5 @@ PYTHONPATH=. pytest
 ```
 
 ## Troubleshooting
-- Password hashing now uses an in-app PBKDF2-SHA256 implementation and no longer depends on `passlib`/`bcrypt`, avoiding the previous bcrypt startup crash during seeding.
 - If API crashes at startup with email validation errors, ensure dependencies are installed from `backend/requirements.txt` (includes `email-validator`).
-- API now seeds users during FastAPI startup after DB readiness checks, instead of running a separate pre-uvicorn seed command.
-
-- If `http://localhost:8000/docs` is unreachable after `docker compose up`, run:
-  ```bash
-  docker compose ps
-  docker compose logs api --tail=200
-  ```
-  The stack now waits for Postgres health before API/worker startup and retries DB connection during seed.
-- If login fails, verify the seeded users exist by recreating from scratch:
-  ```bash
-  docker compose down -v
-  docker compose up --build
-  ```
-  (Auth is currently bypassed in this testing build.)
+- The seed step now creates database tables before inserting users, so `docker compose up` can bootstrap cleanly.
