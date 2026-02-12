@@ -1,21 +1,16 @@
 import json
-import logging
-import time
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from .auth import create_access_token, get_current_user, hash_password, verify_password
-from .database import Base, SessionLocal, engine, get_db
+from .database import Base, engine, get_db
 from .models import ContentPack, ContentPackStatus, Role, User
 from .schemas import ContentPackOut, ContentPackUpdate, LoginIn, RejectIn, TokenOut, UserCreate, UserOut
 from .services.pipeline import run_enrichment_and_generation, run_ingestion, set_status
 
 app = FastAPI(title='Get Sendy Pipeline API')
-logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,37 +21,9 @@ app.add_middleware(
 )
 
 
-def wait_for_db(max_attempts: int = 30, delay_seconds: int = 2) -> None:
-    for attempt in range(1, max_attempts + 1):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text('SELECT 1'))
-            return
-        except OperationalError:
-            if attempt == max_attempts:
-                raise
-            time.sleep(delay_seconds)
-
-
-def ensure_seed_users(db: Session) -> None:
-    if not db.query(User).filter(User.email == 'admin@getsendy.dev').first():
-        db.add(User(email='admin@getsendy.dev', password_hash=hash_password('password123'), role=Role.ADMIN))
-    if not db.query(User).filter(User.email == 'reviewer@getsendy.dev').first():
-        db.add(User(email='reviewer@getsendy.dev', password_hash=hash_password('password123'), role=Role.REVIEWER))
-    db.commit()
-
-
 @app.on_event('startup')
 def startup():
-    wait_for_db()
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        ensure_seed_users(db)
-    except Exception:
-        logger.exception('Failed to seed startup users')
-    finally:
-        db.close()
 
 
 @app.get('/health')
