@@ -9,11 +9,6 @@ services:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d get_sendy"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   redis:
     image: redis:7
@@ -41,11 +36,8 @@ services:
     ports:
       - '8000:8000'
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    restart: unless-stopped
+      - db
+      - redis
     command: sh -c "python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   worker:
@@ -55,11 +47,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: supersecret
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    restart: unless-stopped
+      - db
+      - redis
     command: celery -A app.celery_app.celery worker --beat --loglevel=info
 
   web:
@@ -69,9 +58,7 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      api:
-        condition: service_started
-    restart: unless-stopped
+      - api
 
 volumes:
   pgdata:

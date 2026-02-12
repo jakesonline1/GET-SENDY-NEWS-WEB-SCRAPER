@@ -52,24 +52,5 @@ PYTHONPATH=. pytest
 ```
 
 ## Troubleshooting
-- Password hashing now uses `pbkdf2_sha256` to avoid bcrypt runtime incompatibilities in Docker. If login still fails after dependency changes, rebuild API/worker images:
-  ```bash
-  docker compose down -v
-  docker compose build --no-cache api worker
-  docker compose up
-  ```
 - If API crashes at startup with email validation errors, ensure dependencies are installed from `backend/requirements.txt` (includes `email-validator`).
 - The seed step now creates database tables before inserting users, so `docker compose up` can bootstrap cleanly.
-
-- If `http://localhost:8000/docs` is unreachable after `docker compose up`, run:
-  ```bash
-  docker compose ps
-  docker compose logs api --tail=200
-  ```
-  The stack now waits for Postgres health before API/worker startup and retries DB connection during seed.
-- If login fails, verify the seeded users exist by recreating from scratch:
-  ```bash
-  docker compose down -v
-  docker compose up --build
-  ```
-  Then sign in with `admin@getsendy.dev` / `password123`.
